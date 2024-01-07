@@ -1,0 +1,78 @@
+@startuml
+title Carsharing Service - Payment Service
+
+actor        Арендатор as Renter
+actor        Поставщик as Provider
+participant  FRONTEND  as Frontend
+participant  BACKEND   as Backend
+participant  CAR_SEARCH_SERVICE as CarSearchService
+participant  ORDER_MANAGEMENT_SERVICE as OrderManagementService
+participant  PAYMENT_SERVICE as PaymentService
+
+group "Регистрация авто"
+Provider->Frontend:Загрузить фото авто
+Provider->Frontend:Добавит описание авто
+Provider->Frontend:Выставить авто в общий список
+Frontend->Backend:Добавить авто в каталог
+Frontend->Provider:Сообщить о добавлении \n в очередь на заказ
+end
+
+group "Создание заказа"
+Renter->Frontend:Ввести параметры\n интересующего авто
+Frontend->Backend: передать параметры авто
+Backend->CarSearchService:Поиск свободных авто\n по параметрам
+CarSearchService->Backend:Вернуть список свободных авто
+Backend->Frontend:Показать доступные тарифы\n и цены
+Frontend->Renter:Показать доступные тарифы\n и цены
+Renter->Frontend:Забронировать авто
+Frontend->Backend:Найти машину
+Backend->Provider:Сообщить о новой брони
+Backend->Frontend:Сообщить о назначенной машине
+Frontend->Renter:Показать авто на карте
+Frontend->Provider:Показать клиента на карте
+end
+
+group "Оплата заказа"
+Renter->Frontend:Начать платеж по счетчику
+Frontend->Backend:Начать платеж по счетчику
+Backend->PaymentService:Проверить наличие средств на карте
+PaymentService->Backend:Вернуть результат проверки
+alt Достаточно средств на карте
+    Backend->PaymentService:Списать средства с карты
+    PaymentService->Backend:Вернуть подтверждение оплаты
+    Backend->Frontend:Показать подтверждение оплаты
+    Frontend->Renter:Показать подтверждение оплаты
+else Недостаточно средств на карте
+    Backend->Frontend:Показать сообщение о недостатке средств
+    Frontend->Renter:Показать сообщение о недостатке средств
+    Renter->Frontend:Выбрать действие (уход в долг или блокировка)
+    Frontend->Backend:Передать выбранное действие
+    alt Уход в долг
+        Backend->Frontend:Показать сообщение об уходе в долг
+        Frontend->Renter:Показать сообщение об уходе в долг
+    else Блокировка
+        Backend->Frontend:Заблокировать возможность использования сервиса
+        Frontend->Renter:Показать сообщение о блокировке
+    end
+end
+end
+
+group "Управление бронированием"
+Backend->Frontend:Получить уведомление о новой брони
+Frontend->Provider:Получить уведомление о новой брони
+Frontend->Backend:Передать данные арендатора и заказа
+Backend->Frontend:Отправить уведомление о брони владельцу авто
+Frontend->Provider:Показать информацию о брони
+Provider->Frontend:Отменить бронь
+Frontend->Backend:Передать номер брони на отмену
+Backend->OrderManagementService:Отменить бронь
+OrderManagementService->Backend:Вернуть подтверждение отмены брони
+Backend->Frontend:Сообщить об отмене брони
+Frontend->Provider:Показать причину отмены и возможность блокировки арендатора
+Provider->Frontend:Выбрать причину отмены и возможность блокировки арендатора
+Frontend->Backend:Передать выбранную причину и решение по блокировке
+Backend->Provider:Отправить уведомление об отмене брони с причиной и решением по блокировке
+Backend->Renter:Отправить уведомление об отмене брони с причиной и решением по блокировке
+end
+
+@enduml
