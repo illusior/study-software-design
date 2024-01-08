@@ -1,0 +1,153 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!include <tupadr3/devicons2/mysql>
+!include <tupadr3/material/queue>
+!include <tupadr3/material/mail>
+
+AddElementTag("v1.0", $borderColor="#d73027")
+AddElementTag("v1.1", $fontColor="#d73027")
+AddElementTag("backup", $fontColor="orange")
+
+AddRelTag("backup", $textColor="orange", $lineColor="orange", $lineStyle = DashedLine())
+
+Person(client, "Клиент", "Пользователь, зарегистрированный в системе, способный совершать заказы")
+Person(driver, "Водитель", "Пользователь, зарегистрированный в системе вместе с автомобилем, способный выполнять заказы")
+Person(unregisteredUser, "Незарегистрированный пользователь", "Отсутствуют личные данные в системе")
+Person(administrator, "Администратор", "Управление учетными записями, формирование отчетов, решение жалоб")
+
+System_Boundary(CarSharingService, "Сервис аренды автомобилей") {
+    Container(apiGateway, "API-gateway", "C++", "Распределяем запросы между мобильными клиентами и веб-клиентами по разным микросервисам")
+
+    'Клиентские приложения
+    Container(clientMobileApp, "Мобильное кроссплатформенное приложение клиента", "Flutter", "Мобильное приложение клиента для аренды автомобилей")
+    unregisteredUser --> clientMobileApp: "Регистрация нового пользователя в качестве клиента"
+    client --> clientMobileApp: "Просмотр дорожной обстановки, аренд автомобилей, выбор параметров заказа"
+    clientMobileApp --> apiGateway : "Использует\n[HTTPS]"
+
+    Container(driverMobileApp, "Мобильное кроссплатформенное приложение водителя", "Flutter", "Мобильное приложение клиента для аренды автмобилей")
+    unregisteredUser --> driverMobileApp: "Регистрация нового пользователя в качестве водителя"
+    driver --> driverMobileApp: "Просмотр дорожной обстановки, принятие заказа"
+    driverMobileApp --> apiGateway : "Использует\n[HTTPS]"
+
+    Container(adminSpa, "Админская SPA", "React", "Веб-интерфейс панели управления для работы администратора, предоставляющий весь необходимый контекст для решения задач")
+    administrator --> adminSpa: "Решение конфликтов, создание отчетов, проверка водителей"
+    adminSpa --> apiGateway : "Использует\n[HTTPS]"
+
+    'Микросервисы пользователей
+    Container(userAuthMicroservice, "Микросервис авторизации пользователей", "C++", "Авторизация пользователей Oauth2 c JWT токеном")
+    apiGateway --> userAuthMicroservice : "Авторизация пользователя"
+    ContainerDb(userAuthMicroserviceDB, "База данных микросервиса авторизации пользователей", "MySQL", "Сохраняет креды пользователя и его разрешения", $sprite="mysql")
+    userAuthMicroservice --> userAuthMicroserviceDB : "Прочитать/Записать информацию"
+    Container(userMicroservice, "Микросервис пользователей", "C++", "Редактирование пользователем информации в своем аккаунте")
+    apiGateway --> userMicroservice : "Работа с аккаунтом клиента/водителя"
+    ContainerDb(userMicroserviceDB, "База данных микросервиса пользователя", "MySQL", "Сохраняет предоставленную личную информацию пользователя", $sprite="mysql")
+    userMicroservice --> userMicroserviceDB : "Прочитать/Записать информацию"
+    ContainerQueue(userMessageBus, "Шина сообщений пользователя", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с изменением состояния агрегата аккаунта клиента или водителя", $sprite="queue")
+    userAuthMicroservice --> userMessageBus : "Публикация события авторизации в системе"
+    userMicroservice --> userMessageBus : "Публикация события изменения агрегата клиента/водителя"
+
+    'Навигация
+    Container(navigationMicroservice, "Микросервисы для навигации", "C++", "Позволяют строить маршрут, просчитывать время и загруженность дорог, критерии оптимальности маршрута, дорожную обстановку")
+    apiGateway --> navigationMicroservice : "Прокладывание маршрута"
+    ContainerQueue(navigationMessageBus, "Шина сообщений дорожной обстановки", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с изменением дорожной обстановки", $sprite="queue")
+    navigationMicroservice --> navigationMessageBus : "Публикация события изменения дорожной обстановки"
+
+    'Стоимость заказа
+    Container(priceMicroservice, "Микросервис расчета цены", "C++", "На основании предоставленного контекста вычисляет стоимость заказа")
+    apiGateway --> priceMicroservice : "Рассчитать стоимость"
+    ContainerDb(priceMicroserviceDB, "База данных микросервиса расчета цены", "MySQL", "", $sprite="mysql")
+    priceMicroservice --> priceMicroserviceDB : "Прочитать/Записать информацию"
+    ContainerQueue(priceMessageBus, "Шина сообщений стоимости поездки", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с изменением стоимости поездки", $sprite="queue")
+    priceMicroservice --> priceMessageBus : "Публикация события изменения стоимости поездок"
+
+    'Подбор автомобиля для заказа
+    Container(matchmakingMicroservice, "Микросервис подбора машины", "C++", "Подбирает машину в зависимости от рейтинга и сложности заказа")
+    apiGateway --> matchmakingMicroservice : ""
+    ContainerDb(matchmakingMicroserviceDB, "База данных микросервиса подбора машины", "MySQL", "", $sprite="mysql")
+    matchmakingMicroservice --> matchmakingMicroserviceDB : "Прочитать/Записать информацию"
+    ContainerQueue(matchmakingMessageBus, "Шина сообщений подбора автомобилей", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с подбором автомобиля", $sprite="queue")
+    matchmakingMicroservice --> matchmakingMessageBus : "Публикация события о подобранной машине"
+    priceMicroservice --> matchmakingMessageBus : "Отслеживание изменения при подборе машины"
+
+    'Аналитика
+    Container(analyticsAndReportingMicroservice, "Микросервис аналитики и отчетности", "C++", "Отвечает за сбор и анализ данных о поездках, платежах и других ключевых метриках приложения")
+    apiGateway --> analyticsAndReportingMicroservice : "Работа с аналитической информацией"
+    ContainerDb(analyticsAndReportingMicroserviceDB, "База данных микросервиса аналитики и отчетности", "Greenplum", "")
+    analyticsAndReportingMicroservice ---> analyticsAndReportingMicroserviceDB : "Прочитать/Записать информацию"
+
+    'Саппорт
+    Container(supportMicroservice, "Микросервис поддержки", "C++", "Отвечает за обработку обращений пользователей и водителей и предоставление поддержки по различным вопросам.")
+    apiGateway --> supportMicroservice : ""
+    ContainerDb(supportMicroserviceDB, "База данных микросервиса поддержки", "MySQL", "Информация обо всех обращениях в техническую поддержку, отчетах водителей о них и их автомобилях", , $sprite="mysql")
+    supportMicroservice --> supportMicroserviceDB : "Прочитать/Записать информацию"
+
+    Container(conflictMicroservice, "Микросервис конфликтов", "C++", "Отвечает за обработку конфликтных ситуаций")
+    apiGateway --> conflictMicroservice : "Конфликтная ситуация"
+    ContainerQueue(conflictMessageBus, "Шина сообщений конфликтов", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с появлением и разрешением конфликтов", $sprite="queue")
+    ContainerDb(conflictMicroserviceDb, "База данных микросервиса конфликтов", "MySQL", "Информация обо всех конфликтах, их контексте, отчетах водителей о них и их автомобилях", , $sprite="mysql")
+    conflictMicroservice --> conflictMicroserviceDb : "Прочитать/Записать информацию"
+    conflictMicroservice --> conflictMessageBus : "Публикация события, связанного с конфликтом"
+    supportMicroservice --> conflictMessageBus : "Отслеживание изменения статуса конфликта"
+
+    Container(fleetManagementMicroservice, "Микросервис управления автомобильным парком", "C++", "Отвечает за управление информацией о доступных автомобилях и поддержании их в хорошем состоянии")
+    apiGateway --> fleetManagementMicroservice : ""
+    ContainerDb(fleetManagementMicroserviceDB, "База данных микросервиса управления автомобильным парком", "MySQL", "", $sprite="mysql")
+    fleetManagementMicroservice --> fleetManagementMicroserviceDB : "Прочитать/Записать информацию"
+    integrationWithPartnersMicroservice --> fleetManagementMicroservice : "Интеграция с автопарком партнера\n[gRPC]"
+
+    'Заказ
+    Container(orderMicroservice, "Микросервис заказов", "C++", "Отвечает за обработку и управление заказами пользователей и назначение водителей")
+    apiGateway --> orderMicroservice : "Совершить заказ"
+    ContainerDb(orderMicroserviceDB, "База данных микросервиса заказов", "MySQL", "", $sprite="mysql")
+    orderMicroservice --> orderMicroserviceDB : "Прочитать/Записать информацию"
+    ContainerQueue(orderMessageBus, "Шина сообщений заказа", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с изменением статуса заказа", $sprite="queue")
+
+    'Оплата заказа
+    Container(bankingMicroservice, "Микросервис оплаты", "C++", "Обеспечение поступления денежных средств за соверешенные поездки от клиентов к водителям")
+    ContainerDb(bankingMicroserviceDb, "База данных микросервиса оплаты", "MySQL", $sprite="mysql" )
+    bankingMicroservice --> bankingMicroserviceDb : "Прочитать/Записать информацию"
+    Container(bankingNotificationMicroservice, "Микросервис уведомления об оплате", "C++", "Уведомление участников оплаты о ее статусе")
+    ContainerDb(bankingNotificationMicroserviceDb, "База данных микросервиса уведомления об оплате", "MySQL" )
+    bankingNotificationMicroservice --> bankingNotificationMicroserviceDb : "Прочитать/Записать информацию"
+    ContainerQueue(orderPaymentQueue, "Шина сообщений оплаты заказа", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с изменением статуса оплаты заказа", $sprite="queue")
+    orderMicroservice --> orderPaymentQueue: "Отслеживание оплаты заказа"
+    bankingMicroservice --> orderMessageBus : "Отслеживание статуса заказа"
+    bankingNotificationMicroservice --> orderMessageBus : "Уведомление пользователей об оплате"
+
+    Container(messageMicroservice, "Микросервис обмена сообщениями", "C++", "В переписке могут принимать участие, как клиента, так и водитель и сотрудник поддержки")
+    apiGateway --> messageMicroservice
+    userMicroservice --> messageMicroservice
+    supportMicroservice --> messageMicroservice
+
+    'Стадии заказа
+    'Подтверждение заказа, подбор автомобиля
+    orderMicroservice --> matchmakingMicroservice : "Подобрать машину\n[gRPC]"
+    orderMicroservice --> orderMessageBus : "Выбранная машина\n[gRPC]"
+
+    'Заказ в процессе выполнения
+    orderMicroservice --> navigationMessageBus : "Отслеживание изменения дорожных условий"
+    orderMicroservice --> navigationMicroservice : "Отслеживание маршрута\n[gRPC]"
+    orderMicroservice --> priceMicroservice : "Рассчитать стоимость заказа\n[gRPC]"
+
+    'Заказ завершен
+    orderMicroservice --> orderMessageBus : "Заказ завершен"
+    bankingMicroservice --> orderMessageBus : "Провести оплату заказа"
+
+    'Аналитика
+    analyticsAndReportingMicroservice --> supportMicroservice : "Собрать данные раз в день для выгрузки в аналитическую БД\n[gRPC]"
+    analyticsAndReportingMicroservice --> orderMicroservice : "Собрать данные раз в день для выгрузки в аналитическую БД\n[gRPC]"
+    analyticsAndReportingMicroservice --> promotionsAndDiscountsMicroservice : "Собрать данные раз в день для выгрузки в аналитическую БД\n[gRPC]"
+    analyticsAndReportingMicroservice --> bankingMicroservice : "Собрать данные раз в день для выгрузки в аналитическую БД\n[gRPC]"
+}
+
+Container_Ext(navigationSystemExt, "Предоставление необходимых геоданных")
+navigationMicroservice ---> navigationSystemExt : "Отправить/получить запрос на получение данных"
+
+Container_Ext(bankingSystemExt, "Проведение банковских платежей")
+bankingMicroservice --> bankingSystemExt : "Провести оплату"
+
+Container_Ext(notificationSystemExt, "Система уведомлений", $sprite="mail")
+userMicroservice --> notificationSystemExt : "Уведомление пользователей"
+
+SHOW_LEGEND()
+@enduml
