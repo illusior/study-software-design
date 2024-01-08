@@ -1,0 +1,194 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!include <tupadr3/devicons2/mysql>
+
+skinparam rectangle<<boundary>> {
+    Shadowing false
+    StereotypeFontSize 0
+    FontColor #444444
+    BorderColor #444444
+    BorderStyle dashed
+    BackgroundColor #FFFFFF
+}
+
+AddElementTag("v1.0", $borderColor="#d73027")
+AddElementTag("v1.1", $fontColor="#d73027")
+AddElementTag("backup", $fontColor="orange")
+
+AddRelTag("backup", $textColor="orange", $lineColor="orange", $lineStyle = DashedLine())
+
+Person(unregisteredUser, "Незарегистрированный пользователь", "Отсутствуют личные данные в системе")
+Person(client, "Клиент", "Пользователь, зарегистрированный в системе, способный совершать заказы")
+Person(provider, "Арендадатель", "Пользователь, зарегистрированнный в системе вместе с автомобилем, предоставляющий свое авто клиентам")
+Person(administrator, "Администратор", "Управление учетными записями, формирование отчетов, решение жалоб")
+
+System_Boundary(CarSharingService, "Сервис каршеринга") {
+    Container(apiGateway, "API-gateway", "C++", "Распределяем запросы между мобильными клиентами и веб-клиентами по разным микросервисам")
+    Container(messageBroker, "Брокер сообщений", "RabbitMQ, AMQP", "Маршрутизация сообщений от отправителя к получателю")
+
+    Container(clientMobileApp, "Мобильное кроссплатформенное приложение клиента", "Flutter", "Мобильное приложение клиента для заказа авто")
+    unregisteredUser --> clientMobileApp: "Регистрация нового пользователя в качестве клиента"
+    client --> clientMobileApp: "Просмотр дорожной обстановки, заказ такси, выбор параметров заказа"
+    clientMobileApp -> apiGateway : "Использует\n[HTTPS]"
+
+    Container(providerMobileApp, "Мобильное кроссплатформенное приложение водителя", "Flutter", "Мобильное приложение клиента для предоставления авто в аренду")
+    unregisteredUser --> providerMobileApp: "Регистрация нового пользователя в качестве водителя"
+    provider --> providerMobileApp: "Просмотр дорожной обстановки, принятие заказа"
+    providerMobileApp -> apiGateway : "Использует\n[HTTPS]"
+
+    Container(adminSpa, "Адмниская SPA", "React", "Веб-интерфейс панели управления для работы администратора, предоставляющий весь необходимый контекст для решения задач")
+    administrator --> adminSpa: "Решение конфликтов, создание отчетов, проверка водителей"
+    adminSpa --> apiGateway : "Использует\n[HTTPS]"
+
+'Микросервис навигации
+    rectangle "==Микросервис навигации" <<boundary>> as navigationMicroservices {
+            rectangle "==API Layer" <<boundary>> as navigationAPILayer {
+                Container(apiNavigationController, "Контроллер api навигации", "Web API Controller", "Обрабатывает HTTP запросы, извлекает параметры из них")
+                Container(rpcNavigationController, "Вызов удалённых процедур тарифов", "gRPC Controller", "Позволяет вызывать процедуры по RPC")
+            }
+            rectangle "==Application Layer" <<boundary>> as navigationApplicationLayer {
+                rectangle "==Queries" <<boundary>> as navigationQueries {
+                    Container(getNavigationQuery, "GetNavigationQuery", "", "Вернуть информацию маршрута из точки A в точку B")
+                }
+            }
+            rectangle "==Domain Layer" <<boundary>> as navigationDomainLayer {
+                Container(navigationAggregate, "Навигация", "Aggregate", "Детали навигации")
+            }
+            messageBroker --> navigationConsumer : ""
+            apiGateway --> apiNavigationController : ""
+            navigationAPILayer --> navigationApplicationLayer : "Использует"
+            getNavigationQuery --> navigationDomainLayer : "Использует"
+    }
+
+'Микросервис тарифов
+    rectangle "==Микросервис тарифов" <<boundary>> as tariffMicroservice {
+            rectangle "==API Layer" <<boundary>> as tariffAPILayer {
+                Container(tariffConsumer, "Консюмер тарифов", "RabbitMQ Consumer", "Обрабатывает Message из RabbitMQ")
+                Container(apiTariffController, "Контроллер api тарифов", "Web API Controller", "Обрабатывает HTTP запросы, извлекает параметры из них")
+                Container(rpcTariffController, "Вызов удалённых процедур тарифов", "gRPC Controller", "Позволяет вызывать процедуры по RPC")
+            }
+            rectangle "==Application Layer" <<boundary>> as tariffApplicationLayer {
+                rectangle "==Commands" <<boundary>> as tariffCommands {
+                    Container(editTariffCommand, "EditTariffCommand", "", "Изменение текущих тарифов")
+                }
+                rectangle "==Queries" <<boundary>> as tariffQueries {
+                    Container(getTariffQuery, "GetTariffQuery", "", "Вернуть возможные тарифы")
+                }
+            }
+            tariffAPILayer --> tariffApplicationLayer : "Использует"
+            rectangle "==Domain Layer" <<boundary>> as tariffDomainLayer {
+                Container(tariffAggregate, "Тариф", "Aggregate", "Цена за поездку")
+            }
+            tariffCommands --> tariffDomainLayer : "Использует"
+            rectangle "==Infrastructure Layer" <<boundary>> as tariffInfrastructureLayer {
+                Container(tariffRepository, "Репозиторий тарифа", "", "Сохранение/восстановление аггрегата")
+            }
+            tariffCommands --> tariffInfrastructureLayer : "Использует"
+    }
+    apiGateway --> apiTariffController : ""
+    ContainerDb(tariffMicroserviceDB, "База данных микросервиса тарифов", "MySQL", "", $sprite="mysql")
+    tariffInfrastructureLayer --> tariffMicroserviceDB : "Прочитать/Записать информацию"
+
+
+'Микросервис расчета цены
+    rectangle "==Микросервис расчета цены" <<boundary>> as priceMicroservice {
+            rectangle "==API Layer" <<boundary>> as priceAPILayer {
+                Container(priceConsumer, "Консюмер цены", "RabbitMQ Consumer", "Обрабатывает Message из RabbitMQ")
+                Container(apiPriceController, "Контроллер api цены", "Web API Controller", "Обрабатывает HTTP запросы, извлекает параметры из них")
+            }
+            rectangle "==Application Layer" <<boundary>> as priceApplicationLayer {
+                rectangle "==Commands" <<boundary>> as priceCommands {
+                    Container(editPriceCommand, "EditPriceCommand", "", "Изменение текущей цены на поездку")
+                }
+                rectangle "==Queries" <<boundary>> as priceQueries {
+                    Container(getPriceQuery, "GetPriceQuery", "", "Просмотреть текущую цену на поездку")
+                }
+            }
+            priceAPILayer --> priceApplicationLayer : "Использует"
+            rectangle "==Domain Layer" <<boundary>> as priceDomainLayer {
+                Container(priceAggregate, "Цена", "Aggregate", "Цена за поездку")
+            }
+            priceCommands --> priceDomainLayer : "Использует"
+            rectangle "==Infrastructure Layer" <<boundary>> as priceInfrastructureLayer {
+                Container(priceRepository, "Репозиторий цены", "", "Сохранение/восстановление аггрегата")
+            }
+            priceCommands --> priceInfrastructureLayer : "Использует"
+        }
+    apiGateway --> apiPriceController : ""
+    ContainerDb(priceMicroserviceDB, "База данных микросервис расчета цены", "MySQL", "", $sprite="mysql")
+    priceInfrastructureLayer --> priceMicroserviceDB : "Прочитать/Записать информацию"
+
+'Микросервис подбора машины
+    Container(matchmakingMicroservice, "Микросервис подбора машины", "C++", "Подбирает машину в зависимости от рейтинга и предпочтений клиента")
+    apiGateway --> matchmakingMicroservice : ""
+    ContainerDb(matchmakingMicroserviceDB, "База данных микросервиса подбора машины", "MySQL", "", $sprite="mysql")
+    matchmakingMicroservice --> matchmakingMicroserviceDB : "Прочитать/Записать информацию"
+
+'Микросервис аналитики и отчетности
+    Container(analyticsAndReportingMicroservice, "Микросервис аналитики и отчетности", "C++", "Отвечает за сбор и анализ данных о поездках, платежах и других ключевых метриках приложения")
+    apiGateway --> analyticsAndReportingMicroservice : ""
+    ContainerDb(analyticsAndReportingMicroserviceDB, "База данных микросервиса аналитики и отчетности", "Greenplum", "")
+    analyticsAndReportingMicroservice --> analyticsAndReportingMicroserviceDB : "Прочитать/Записать информацию"
+
+'Микросервис поддержки
+    Container(supportMicroservice, "Микросервис поддержки", "C++", "Отвечает за обработку обращений пользователей и водителей и предоставление поддержки по различным вопросам.")
+    apiGateway --> supportMicroservice : ""
+    ContainerDb(supportMicroserviceDB, "База данных микросервиса поддержки", "MySQL", "Информация обо всех конфликтах, их контексте, отчетах водителей о них и их автомобилях", , $sprite="mysql")
+    supportMicroservice --> supportMicroserviceDB : "Прочитать/Записать информацию"
+
+'Микросервис управления автомобильным парком
+    Container(fleetManagementMicroservice, "Микросервис управления автомобильным каталогом", "C++", "Отвечает за управление информацией о доступных автомобилях")
+    apiGateway --> fleetManagementMicroservice : ""
+    ContainerDb(fleetManagementMicroserviceDB, "База данных микросервиса управления автомобильным каталогом", "MySQL", )
+    fleetManagementMicroservice --> fleetManagementMicroserviceDB : "Прочитать/Записать информацию"
+
+'Микросервис заказов
+    Container(ordersMicroservice, "Микросервис заказов", "C++", "Отвечает за обработку и управление заказами пользователей")
+    apiGateway --> ordersMicroservice : ""
+    ContainerDb(ordersMicroserviceDB, "База данных микросервиса заказов", "MySQL", "", $sprite="mysql")
+    ordersMicroservice --> ordersMicroserviceDB : "Прочитать/Записать информацию"
+
+'Микросервис оплаты
+    Container(bankingMicroservice, "Микросервис оплаты", "C++", "Обеспечение поступления денежных средств за соверешенные поездки от клиентов к арендадателям")
+    Container(bankingNotificationMicroservice, "Микросервис уведомления об оплате", "C++", "Уведомление участников оплаты о ее статусе")
+    ContainerDb(bankingNotificationMicroserviceDb, "База данных микросервиса уведомления об оплате", "MySQL" )
+    bankingNotificationMicroservice --> bankingNotificationMicroserviceDb : "Прочитать/Записать информацию"
+
+'Микросервис обмена сообщениями
+    Container(messagerMicroservice, "Микросервис обмена сообщениями", "C++", "В переписке могут принимать участие, как клиента, так и арендадатель и сотрудник поддержки")
+    apiGateway --> messagerMicroservice
+
+    ordersMicroservice ---> messageBroker : "Есть ли доступные машины"
+    messageBroker ---> matchmakingMicroservice: "Есть ли доступные машины"
+    messageBroker ---> ordersMicroservice : "Доступные машины"
+
+    ordersMicroservice ---> messageBroker : "Выбранная машина"
+    messageBroker ---> matchmakingMicroservice: "Выбрать подходящую машину"
+    messageBroker ---> ordersMicroservice : "Машина выбрана"
+
+    ordersMicroservice ---> messageBroker : "Провести платеж"
+    messageBroker ---> bankingMicroservice : "Провести платеж"
+    messageBroker ---> ordersMicroservice : "Платеж проведен"
+    messageBroker ---> bankingNotificationMicroservice : "Уведомить о проведении платежа"
+
+    ordersMicroservice ---> messageBroker : "Узнать стоимость поездки"
+    messageBroker ---> priceConsumer
+    ordersMicroservice ---> routeStopPointSelectorMicroservice : "Выбрать подходящие точки остановки\n[gRPC]"
+
+    analyticsAndReportingMicroservice --> tariffsMicroservice : "Собрать данные раз в день для выгрузки в аналитическую БД"
+    analyticsAndReportingMicroservice --> supportMicroservice : "Собрать данные раз в день для выгрузки в аналитическую БД"
+    analyticsAndReportingMicroservice --> ordersMicroservice : "Собрать данные раз в день для выгрузки в аналитическую БД"
+    analyticsAndReportingMicroservice --> promotionsAndDiscountsMicroservice : "Собрать данные раз в день для выгрузки в аналитическую БД"
+}
+
+Container_Ext(navigationSystemExt, "Предоставление необходимых геоданных")
+    navigationApplicationLayer ---> navigationSystemExt : "Отправить запрос на получение данных"
+    navigationSystemExt ---> navigationApplicationLayer : "Получить ответ с информацией о навигации"
+
+Container_Ext(bankingSystemExt, "Проведение банковских платежей")
+bankingMicroservice --> bankingSystemExt : "Провести оплату"
+bankingSystemExt --> bankingMicroservice : "Предоставить результат проведения оплаты"
+
+
+SHOW_LEGEND()
+@enduml
