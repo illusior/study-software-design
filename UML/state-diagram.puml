@@ -1,0 +1,34 @@
+@startuml
+
+[*]     --> OrderCreated: Создать заказ
+OrderCreated: Заказ создан
+OrderCreated --> OrderCarSearch: Поиск автомобиля
+OrderCarSearch: Поиск свободного автомобиля
+OrderCarSearch-->OrderCarFound: Автомобиль найден
+OrderCarSearch-->OrderCarNotFound: Автомобиль не найден
+OrderCarFound: Информация о местоположении автомобиля
+OrderCarFound-->OrderWalkToCar: Дойти до автомобиля
+OrderWalkToCar: Пользователь подошел к автомобилю
+OrderWalkToCar-->OrderStartRent: Начать аренду
+OrderStartRent: Аренда начата в поминутном режиме оплаты
+OrderStartRent-->OrderDrive: Начать поездку
+OrderDrive: Поездка в процессе
+OrderDrive-->OrderArriveDestination: Прибыть на место назначения
+OrderArriveDestination: Пользователь прибыл на место назначения
+OrderArriveDestination-->OrderRequestPayment: Запросить оплату по счетчику
+OrderRequestPayment: Оплата по счетчику запрошена
+OrderRequestPayment-->OrderFinish: Завершить поездку
+OrderFinish: Поездка завершена
+
+OrderCarNotFound: Автомобиль не найден
+OrderCarNotFound-->OrderShowOtherCars: Показать похожие варианты
+OrderShowOtherCars: Другие возможные автомобили показаны
+OrderShowOtherCars-->OrderCarFound: Арендатор нашел подходящий вариант
+OrderShowOtherCars-->OrderCancel: Арендатор не нашел подходящего варианта
+
+OrderCancel: Заказ отменен
+OrderCancel-->OrderFinish: Завершить заказ
+OrderFinish: Заказ завершен
+
+
+@enduml
