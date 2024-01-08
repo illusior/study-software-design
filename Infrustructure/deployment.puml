@@ -1,0 +1,144 @@
+@startuml deployment
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+!include <tupadr3/devicons2/postgresql>
+!include <tupadr3/material/queue>
+
+LAYOUT_WITH_LEGEND()
+
+title Диаграмма развертывания Сервиса-каршеринга
+
+Deployment_Node(webApp, "Устройство пользователя", "Телефон или Desktop-бразуер") {
+    Container(clientApp, "Приложение клиента", "", "")
+}
+
+Deployment_Node(remotePC, "Удалённый хост-сервер с поднятым Docker-мультиконтейнером", "Сервиса-каршеринга", "Здесь проложена общая сеть для приложений фронта и бэкендов") {
+    Container(apiGateway, "Api Gateway docker-контейнер", "cs-api-gateway", "Распределяем запросы по URL'у. Торчит на ружу по адресу домена")
+
+    Deployment_Node(frontendCluster, "Кластер фронтендов Сервиса-каршеринга", "cs-frontends") {
+        Container(frontendClient, "Фронтенд Сервиса-каршеринга клиента", "cs-frontend-client", "Фронтенд приложение, отдающее контент Flutter-приложения (водителю-клиенту)") {
+        }
+
+        Container(frontendAdmin, "Фронтенд админки Сервиса-каршеринга", "cs-frontend-admin", "Фронтенд приложение, отдающее контент React-приложения администраторам") {
+        }
+    }
+
+    Deployment_Node(backendCluster, "Кластер микросервисов Сервиса-каршеринга", "cs-backend-microservices") {
+        Deployment_Node(tariffCluster, "Кластер микросервиса расчёта тарифов", "cs-backend-cluster-tariff") {
+            Container(tariffBackend, "Микросервис тарифов", "cs-backend-tariff", "Выполняет работу по созданию и актуализации тарифов") {
+            }
+
+            Container(tariffDb, "БД Тарифов", "cs-backend-tariff-db", "") {
+            }
+
+            tariffBackend -> tariffDb : "[TCP/IP]"
+            tariffDb -> tariffBackend : "[TCP/IP]"
+        }
+
+        Deployment_Node(priceCalcCluster, "Кластер микросервиса расчёта цены поездок", "cs-backend-cluster-price-calc", ) {
+            Container(priceCalcBackend, "Микросервис расчёта цены", "cs-backend-price-calc", "Выполняет работу по расчёту конечных цен поездок") {
+            }
+
+            Container(priceCalcDb, "БД микросервиса расчёта цены", "cs-backend-price-calc-db", "") {
+            }
+
+            priceCalcBackend -> priceCalcDb : "[TCP/IP]"
+            priceCalcDb -> priceCalcBackend : "[TCP/IP]"
+        }
+
+        Deployment_Node(carChooseCluster, "Кластер микросервиса подбора машин", "cs-backend-cluster-car-choose", ) {
+            Container(carChooseBackend, "Микросервис подбора машины", "cs-backend-car-choose", "Выполняет работу по формированию списка машин по набору фильтров") {
+            }
+
+            Container(carChooseDb, "БД микросервиса подбора машин", "cs-backend-car-choose-db", "") {
+            }
+
+            carChooseBackend -> carChooseDb : "[TCP/IP]"
+            carChooseDb -> carChooseBackend : "[TCP/IP]"
+        }
+
+        Container(navigationBackend, "Микросервис навигации", "cs-backend-navigation", "Производит работу по созданию и обработки инфы о маршрутах") {
+        }
+
+        Deployment_Node(statisticsCluster, "Кластер микросервиса аналититки и статистики", "cs-backend-cluster-statistics", ) {
+            Container(statisticsBackend, "Микросервис аналититки и статистики", "cs-backend-statistics", "Аккумулирует информацию о поездках и формирует отчёты") {
+            }
+
+            Container(statisticsDb, "БД микросервиса статистики", "cs-backend-statistics-db", "") {
+            }
+
+            statisticsBackend -> statisticsDb : "[TCP/IP]"
+            statisticsDb -> statisticsBackend : "[TCP/IP]"
+        }
+
+        Deployment_Node(supportCluster, "Кластер микросервиса тех-поддержки", "cs-backend-cluster-support", ) {
+            Container(supportBackend, "Микросервис тех-поддержки", "cs-backend-support", "Отвечает за обработку обращений пользователей и водителей и предоставление поддержки по различным вопросам") {
+            }
+
+            Container(supportDb, "БД микросервиса тех-поддержки", "cs-backend-support-db", "") {
+            }
+
+            supportBackend -> supportDb : "[TCP/IP]"
+            supportDb -> supportBackend : "[TCP/IP]"
+        }
+
+        Deployment_Node(carParkCluster, "Кластер микросервиса управления автопароком", "cs-backend-cluster-car-park", ) {
+            Container(carParkBackend, "Микросервис управления автопароком", "cs-backend-car-park", "Отвечает за управления автопароком") {
+            }
+
+            Container(carParkDb, "БД микросервиса управления автопароком", "cs-backend-car-park-db", "") {
+            }
+
+            carParkBackend -> carParkDb : "[TCP/IP]"
+            carParkDb -> carParkBackend : "[TCP/IP]"
+        }
+
+        Deployment_Node(orderCluster, "Кластер микросервиса заказов машин", "cs-backend-cluster-order", ) {
+            Container(orderBackend, "Микросервис заказов машин", "cs-backend-order", "Отвечает за заказов машин") {
+            }
+
+            Container(orderDb, "БД микросервиса заказов машин", "cs-backend-order-db", "") {
+            }
+
+            orderBackend -> orderDb : "[TCP/IP]"
+            orderDb -> orderBackend : "[TCP/IP]"
+        }
+
+        Container(messageBackend, "Микросервис обмена сообщениями", "cs-backend-messages", "Обеспечение поступления денежных средств за соверешенные поездки от клиентов к арендадателям") {
+        }
+
+        messageBackend -> orderBackend : "[TCP/IP]"
+        orderBackend -> messageBackend : "[TCP/IP]"
+
+        messageBackend --> carParkBackend : "[TCP/IP]"
+        carParkBackend --> messageBackend : "[TCP/IP]"
+
+        messageBackend -> supportBackend : "[TCP/IP]"
+        supportBackend -> messageBackend : "[TCP/IP]"
+
+        messageBackend ---> statisticsBackend : "[TCP/IP]"
+        statisticsBackend ---> messageBackend : "[TCP/IP]"
+
+        messageBackend ----> statisticsBackend : "[TCP/IP]"
+        statisticsBackend ----> messageBackend : "[TCP/IP]"
+
+        messageBackend ---> carChooseBackend : "[TCP/IP]"
+        carChooseBackend ---> messageBackend : "[TCP/IP]"
+
+        messageBackend --> priceCalcBackend : "[TCP/IP]"
+        priceCalcBackend --> messageBackend : "[TCP/IP]"
+
+        messageBackend ---> tariffBackend : "[TCP/IP]"
+        tariffBackend ---> messageBackend : "[TCP/IP]"
+
+        messageBackend -> navigationBackend : "[TCP/IP]"
+        navigationBackend -> messageBackend : "[TCP/IP]"
+    }
+}
+
+clientApp --> apiGateway : "Отправка запроса. Фильтрация запросов к (фронту|кластеру микросервисов) по URl'у\n[HTTPS/JSON]"
+
+apiGateway --> frontendClient : "Перенаправление запроса на фронтенд, если запрос сделан на домен\n[TCP/IP]"
+apiGateway -> frontendAdmin : "Перенаправление запроса на фронтенд админки, если запрос сделан на /admin роут домена\n[TCP/IP]"
+
+apiGateway --> backendCluster : "Перенаправление запроса на бэкенд, если запрос сделан на домен/api/\n[TCP/IP]"
+
